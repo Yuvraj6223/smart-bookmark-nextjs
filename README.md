@@ -12,176 +12,269 @@
 
 ## Live Demo
 
-<!-- Replace with your actual deployed URL -->
 🔗 [https://smart-bookmark-app.vercel.app](https://smart-bookmark-app.vercel.app)
 
 ---
 
-## Features
+## Overview
 
-- **Google OAuth Authentication** — Secure sign-in via Google accounts (no passwords stored)
-- **Add & Delete Bookmarks** — Save URLs with titles, remove them with a confirmation step
-- **Real-time Synchronization** — Bookmarks update instantly across all open tabs and devices
-- **Private Bookmark Storage** — Row Level Security enforces strict user data isolation
-- **Mobile-Responsive Design** — Premium dark UI with glassmorphism, optimized for all screen sizes
-- **Input Validation** — Client-side and server-side validation with user-friendly error feedback
-- **Toast Notifications** — Animated success/error feedback for all operations
+Smart Bookmark App lets users save, manage, and sync bookmarks across devices in real time. Users authenticate via Google OAuth — no passwords are stored. Each user's bookmarks are completely isolated at the database level using Supabase Row Level Security (RLS), and changes propagate instantly to all open tabs via WebSocket-based real-time subscriptions. The UI features a premium dark theme with glassmorphism effects and is fully responsive across mobile and desktop.
 
 ---
 
 ## Tech Stack
 
-| Layer | Technology |
-|---|---|
-| **Framework** | [Next.js 16](https://nextjs.org/) (App Router, Server Components) |
-| **Language** | [TypeScript 5](https://www.typescriptlang.org/) |
-| **Styling** | [Tailwind CSS 4](https://tailwindcss.com/) + Custom CSS Design System |
-| **Database** | [Supabase](https://supabase.com/) (PostgreSQL) |
-| **Authentication** | Supabase Auth with Google OAuth 2.0 (PKCE flow) |
-| **Real-time** | Supabase Realtime (WebSocket) |
-| **Deployment** | [Vercel](https://vercel.com/) (Serverless) |
-| **Linting** | ESLint with Next.js Core Web Vitals + TypeScript rules |
+| Layer              | Technology                                                          |
+| ------------------ | ------------------------------------------------------------------- |
+| **Framework**      | [Next.js 16](https://nextjs.org/) (App Router, Server Components)   |
+| **Language**       | [TypeScript 5](https://www.typescriptlang.org/)                     |
+| **Styling**        | [Tailwind CSS 4](https://tailwindcss.com/) + Custom CSS Design System |
+| **Database**       | [Supabase](https://supabase.com/) (PostgreSQL)                      |
+| **Authentication** | Supabase Auth with Google OAuth 2.0 (PKCE flow)                     |
+| **Real-time**      | Supabase Realtime (WebSocket)                                       |
+| **Deployment**     | [Vercel](https://vercel.com/) (Serverless)                          |
 
 ---
 
-## Architecture Overview
+## Problems Encountered & How I Solved Them
 
-### Application Flow
+This section documents the real challenges I ran into while building this application and the solutions I implemented for each one.
 
-```
-┌─────────────┐     ┌──────────────────┐     ┌─────────────────┐
-│   Browser    │────▶│  Next.js (Vercel) │────▶│    Supabase     │
-│             │◀────│  App Router + SSR  │◀────│  PostgreSQL +   │
-│  React SPA  │     │  Middleware Auth   │     │  Realtime WS    │
-└─────────────┘     └──────────────────┘     └─────────────────┘
-       │                                              │
-       │              Google OAuth 2.0                │
-       └──────────────────────────────────────────────┘
-```
+---
 
-### Authentication Flow
+### Problem 1: TypeScript Type Conflicts with Supabase Client
 
-```
-User ──▶ "Sign in with Google" ──▶ Google Consent Screen
-                                          │
-                                    User Approves
-                                          │
-                                          ▼
-              /api/auth/callback ◀── Google Redirect (with code)
-                     │
-                     ▼
-         exchangeCodeForSession(code)
-                     │
-                     ▼
-           Session Cookie Set ──▶ Redirect to /bookmarks
+**What happened:** I initially passed a generic `Database` type to `createServerClient<Database>(...)` to get type-safe database queries. This immediately caused a wall of type mismatches between my custom `Database` interface and the types expected internally by the `@supabase/ssr` library. The generics didn't align, and TypeScript refused to compile.
+
+**What I tried first:** I spent time trying to adjust my `Database` type definition to match what Supabase expected, but the internal types in `@supabase/ssr` are complex and not well-documented for custom generics.
+
+**How I solved it:** I removed the generic type parameter entirely from the client initialization calls in both `server.ts` and `middleware.ts`:
+
+```typescript
+// ❌ Before — caused type conflicts
+const supabase = createServerClient<Database>(url, key, { ... });
+
+// ✅ After — works without generic, types enforced at app layer
+const supabase = createServerClient(url, key, { ... });
 ```
 
-### Real-time Sync Flow
+Type safety is still maintained through the `Bookmark` interface at the application layer — when fetching or inserting data, I cast the results to my typed interfaces. This gives me the type checking I need without fighting the library internals.
 
+---
+
+### Problem 2: Real-time Subscription Memory Leaks
+
+**What happened:** After deploying the app, I noticed that navigating between pages or hot-reloading during development caused WebSocket connections to pile up. The browser's network tab showed dozens of active WebSocket connections. This happened because React's `useEffect` was subscribing to Supabase Realtime channels on mount, but the cleanup on unmount wasn't properly removing the channels.
+
+**Root cause:** When the `BookmarkList` component unmounted (e.g., due to a route change or HMR), the Realtime channel continued listening in the background because I wasn't calling `supabase.removeChannel()` in the effect cleanup.
+
+**How I solved it:** Added proper cleanup in the `useEffect` return function:
+
+```typescript
+useEffect(() => {
+  const supabase = createClient();
+  const channel = supabase
+    .channel('bookmarks-channel')
+    .on('postgres_changes', { event: 'INSERT', ... }, handler)
+    .subscribe();
+
+  return () => {
+    supabase.removeChannel(channel); // ← cleanup on unmount
+  };
+}, [userId]);
 ```
-Tab 1: INSERT bookmark ──▶ Supabase DB ──▶ Realtime Event
-                                                 │
-                                    ┌────────────┤
-                                    ▼            ▼
-                                  Tab 1        Tab 2
-                               (optimistic)  (real-time)
-                               UI updated    UI updated
+
+This ensures that every time the component unmounts, the WebSocket channel is removed and the connection is closed.
+
+---
+
+### Problem 3: OAuth Redirect URL Mismatch Between Environments
+
+**What happened:** Google OAuth login worked perfectly on `localhost:3000` but broke immediately when I deployed to Vercel. The error was a redirect URI mismatch — Google was rejecting the callback because the redirect URL baked into the sign-in request still pointed to `localhost`.
+
+**Why it was tricky:** I originally hardcoded the redirect URL as `http://localhost:3000/api/auth/callback`. This worked during development but obviously failed in production where the domain was different.
+
+**How I solved it:** Replaced the hardcoded URL with a dynamic construction using `window.location.origin`:
+
+```typescript
+// In AuthButton.tsx
+const { error } = await supabase.auth.signInWithOAuth({
+  provider: 'google',
+  options: {
+    redirectTo: `${window.location.origin}/api/auth/callback`,
+  },
+});
+```
+
+This automatically resolves to `http://localhost:3000/api/auth/callback` in development and `https://smart-bookmark-app.vercel.app/api/auth/callback` in production — no environment-specific configuration needed in the code.
+
+> **Important:** You still need to add both URLs to Google Cloud Console's **Authorized redirect URIs** and to Supabase's **Redirect URLs** allowlist.
+
+---
+
+### Problem 4: Server-Side Auth Using `getSession()` Instead of `getUser()`
+
+**What happened:** I initially used `supabase.auth.getSession()` in the middleware and server components to check if a user was authenticated. Everything seemed to work, but I discovered this is a **security vulnerability**. `getSession()` only reads the JWT from the cookie and decodes it locally — it does *not* verify the token with the Supabase Auth server. This means an expired or revoked token could still pass the auth check.
+
+**The risk:** If a user's account was deleted or their session was revoked server-side, `getSession()` would still return a valid-looking session object from the stale JWT in the cookie.
+
+**How I solved it:** Replaced all server-side auth checks with `getUser()`, which makes a network request to the Supabase Auth server to revalidate the token:
+
+```typescript
+// In middleware.ts — the comment is there as a reminder
+// IMPORTANT: Do NOT use getSession() here.
+// getUser() sends a request to the Supabase Auth server to revalidate the token.
+const {
+  data: { user },
+} = await supabase.auth.getUser();
+```
+
+This adds a small latency cost per request, but it ensures that every protected route is genuinely authenticated against the auth server.
+
+---
+
+### Problem 5: Duplicate Bookmarks from Real-time + Optimistic Updates
+
+**What happened:** When a user added a bookmark, it would briefly appear *twice* in the list. The flow was:
+
+1. User submits form → bookmark is inserted into Supabase
+2. Supabase Realtime fires an `INSERT` event → component adds the new bookmark to state
+3. But sometimes the real-time event arrived so fast that the state already had the bookmark from a previous render cycle, causing a duplicate
+
+**Why it was confusing:** The duplication was intermittent — it depended on the race between the Supabase insert response and the Realtime WebSocket event. Sometimes it appeared as a flash, sometimes it persisted.
+
+**How I solved it:** Added a deduplication guard in the Realtime event handler before adding the bookmark to state:
+
+```typescript
+.on('postgres_changes', { event: 'INSERT', ... }, (payload) => {
+  const newBookmark = payload.new as Bookmark;
+  setBookmarks((prev) => {
+    // Prevent duplicate if optimistic update already added it
+    if (prev.some((b) => b.id === newBookmark.id)) return prev;
+    return [newBookmark, ...prev];
+  });
+})
+```
+
+This check ensures that if the bookmark already exists in the array (by ID), the real-time event is simply ignored.
+
+---
+
+### Problem 6: Google Avatar Images Blocked by Next.js
+
+**What happened:** After implementing the user profile section in the header (showing the user's Google avatar), the images failed to load with a 500 error. The browser showed a broken image icon.
+
+**Root cause:** Next.js Image Optimization blocks external image domains by default for security reasons. Google profile pictures are served from `lh3.googleusercontent.com`, which wasn't in the allowlist.
+
+**How I solved it:** Added the Google avatar domain to the `remotePatterns` in `next.config.ts`:
+
+```typescript
+// next.config.ts
+const nextConfig: NextConfig = {
+  images: {
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: 'lh3.googleusercontent.com',
+      },
+    ],
+  },
+};
 ```
 
 ---
 
-## Project Structure
+### Problem 7: Real-time Channel Name Collisions Across Tabs
 
-```
-smart-bookmark-app/
-├── middleware.ts                    # Next.js middleware (session refresh + route protection)
-├── database-schema.sql             # Complete SQL schema with RLS policies
-├── next.config.ts                  # Next.js config (Google avatar image domains)
-├── eslint.config.mjs               # ESLint with core-web-vitals + TypeScript
-├── ENV_EXAMPLE.md                  # Environment variable template
-│
-└── src/
-    ├── app/
-    │   ├── layout.tsx              # Root layout (Inter font, Header, Footer, ToastProvider)
-    │   ├── page.tsx                # Landing page — redirects to /bookmarks or /login
-    │   ├── globals.css             # Complete design system (dark theme, glassmorphism, animations)
-    │   │
-    │   ├── (auth)/
-    │   │   └── login/
-    │   │       └── page.tsx        # Login page with Google OAuth button + feature cards
-    │   │
-    │   ├── (dashboard)/
-    │   │   └── bookmarks/
-    │   │       └── page.tsx        # Protected bookmarks dashboard (SSR data fetching)
-    │   │
-    │   ├── api/
-    │   │   └── auth/
-    │   │       └── callback/
-    │   │           └── route.ts    # OAuth callback — exchanges code for session
-    │   │
-    │   └── auth/
-    │       └── error/
-    │           └── page.tsx        # Auth error page with troubleshooting guide
-    │
-    ├── components/
-    │   ├── AuthButton.tsx          # Google sign-in button with loading state
-    │   ├── BookmarkForm.tsx        # Add bookmark form with validation
-    │   ├── BookmarkList.tsx        # Bookmark list with real-time subscription
-    │   ├── BookmarkItem.tsx        # Individual bookmark with delete confirmation
-    │   ├── Toast.tsx               # Toast notification system (Context + Provider)
-    │   └── Layout/
-    │       ├── Header.tsx          # Sticky header with user avatar + sign-out
-    │       └── Footer.tsx          # Footer with attribution links
-    │
-    ├── lib/
-    │   ├── supabase/
-    │   │   ├── client.ts           # Browser-side Supabase client (createBrowserClient)
-    │   │   ├── server.ts           # Server-side Supabase client (createServerClient)
-    │   │   └── middleware.ts       # Session refresh + route protection logic
-    │   └── utils/
-    │       └── validation.ts       # URL and title validation utilities
-    │
-    └── types/
-        └── index.ts                # TypeScript interfaces (Bookmark, Profile, Database)
-```
+**What happened:** Real-time sync worked correctly when the user had one or two tabs open, but broke silently when three or more tabs were open simultaneously. Bookmarks added in one tab wouldn't appear in some other tabs.
 
----
+**Root cause:** Every tab was subscribing to a Supabase Realtime channel with the **same hardcoded name** (`'bookmarks-channel'`). Supabase silently drops duplicate channel subscriptions from the same client. Since all tabs share the same Supabase project credentials, the channels collided.
 
-## Database Schema
+**How I solved it:** Generated a unique channel name per component instance using a combination of `Date.now()` and a random string, stored in a `useRef` to keep it stable across re-renders:
 
-### Bookmarks Table
-
-```sql
-CREATE TABLE bookmarks (
-  id         UUID        DEFAULT gen_random_uuid() PRIMARY KEY,
-  user_id    UUID        REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
-  title      VARCHAR(200)  NOT NULL,
-  url        VARCHAR(2048) NOT NULL,
-  created_at TIMESTAMPTZ   DEFAULT NOW(),
-  updated_at TIMESTAMPTZ   DEFAULT NOW()
+```typescript
+const channelIdRef = useRef<string>(
+  `bookmarks-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
 );
 
--- Performance indexes
-CREATE INDEX idx_bookmarks_user_id    ON bookmarks(user_id);
-CREATE INDEX idx_bookmarks_created_at ON bookmarks(created_at DESC);
+// Then used in the subscription:
+const channel = supabase
+  .channel(channelIdRef.current)  // ← unique per tab/instance
+  .on('postgres_changes', { ... })
+  .subscribe();
 ```
 
-### Row Level Security (RLS) Policies
+This ensures each tab gets its own independent Realtime channel and receives all events.
 
-| Policy | Operation | Rule |
-|---|---|---|
-| Users can view own bookmarks | `SELECT` | `auth.uid() = user_id` |
-| Users can insert own bookmarks | `INSERT` | `auth.uid() = user_id` |
-| Users can delete own bookmarks | `DELETE` | `auth.uid() = user_id` |
-| Users can update own bookmarks | `UPDATE` | `auth.uid() = user_id` |
+---
 
-> All policies ensure **complete user data isolation** — a user can never read, write, or delete another user's bookmarks, even if they bypass the UI.
+### Problem 8: Delete Not Reflecting in Real-time Across Tabs
 
-### Realtime
+**What happened:** When a user deleted a bookmark, it disappeared from the current tab (because of the optimistic UI update), but other open tabs still showed the deleted bookmark until the page was manually refreshed.
 
-```sql
-ALTER PUBLICATION supabase_realtime ADD TABLE bookmarks;
+**Root cause:** The original Realtime subscription only listened for `INSERT` events. I had forgotten to subscribe to `DELETE` and `UPDATE` events on the `bookmarks` table.
+
+**How I solved it:** Extended the Realtime subscription to listen for all three event types:
+
+```typescript
+const channel = supabase
+  .channel(channelIdRef.current)
+  .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'bookmarks', filter: `user_id=eq.${userId}` }, handleInsert)
+  .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'bookmarks', filter: `user_id=eq.${userId}` }, handleDelete)
+  .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'bookmarks', filter: `user_id=eq.${userId}` }, handleUpdate)
+  .subscribe();
 ```
+
+Now INSERT, DELETE, and UPDATE events are all propagated in real time across every open tab.
+
+---
+
+### Problem 9: Responsive Layout Breaking on Mobile Devices
+
+**What happened:** The app looked great on desktop but had several layout issues on mobile:
+- The header elements overlapped on small screens
+- The bookmark cards didn't adapt to narrow viewports
+- Touch targets (buttons, links) were too small for comfortable mobile use
+- The two-column layout for the form + bookmark list didn't stack properly
+
+**How I solved it:** Implemented a mobile-first responsive design approach:
+
+1. **CSS breakpoints:** Added `@media` queries at `768px` to switch from stacked mobile layouts to side-by-side desktop layouts
+2. **Flexible components:** Converted fixed-width elements to use relative units (`%`, `rem`, `vw`)
+3. **Touch-friendly sizing:** Ensured all interactive elements met the minimum 44×44px touch target guideline
+4. **Viewport meta tag:** Confirmed the viewport meta tag was properly set for mobile scaling:
+
+```css
+/* Mobile-first base styles */
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 24px;
+}
+
+/* Desktop: side-by-side layout */
+@media (min-width: 768px) {
+  .dashboard-grid {
+    grid-template-columns: 380px 1fr;
+  }
+}
+```
+
+---
+
+## Key Takeaways
+
+| # | Problem | Root Cause | Lesson Learned |
+|---|---------|------------|----------------|
+| 1 | Type conflicts with Supabase | Over-specifying library generics | Don't force generic types on third-party libraries; enforce types at your own layer |
+| 2 | WebSocket memory leaks | Missing `useEffect` cleanup | Always clean up subscriptions, listeners, and connections in React effects |
+| 3 | OAuth redirect mismatch | Hardcoded environment-specific URLs | Use `window.location.origin` for environment-agnostic URL construction |
+| 4 | Insecure auth checks | `getSession()` doesn't verify tokens | Always use `getUser()` server-side for genuine token revalidation |
+| 5 | Duplicate bookmarks | Race between optimistic UI and real-time events | Deduplicate by ID before adding to state |
+| 6 | Blocked Google avatars | Next.js image domain allowlist | Configure `remotePatterns` for all external image sources |
+| 7 | Real-time failing with 3+ tabs | Channel name collisions | Generate unique channel names per instance |
+| 8 | Delete not syncing across tabs | Missing event subscriptions | Subscribe to INSERT, DELETE, and UPDATE — not just INSERT |
+| 9 | Broken mobile layout | Fixed-width desktop-only styles | Design mobile-first; use CSS breakpoints for larger screens |
 
 ---
 
@@ -251,19 +344,17 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 ---
 
-## Deployment
-
-### Vercel (Recommended)
+## Deployment (Vercel)
 
 1. Push your code to a GitHub repository
 2. Go to [vercel.com/new](https://vercel.com/new) and import your repository
 3. Configure **Environment Variables** in the Vercel dashboard:
 
-   | Variable | Value |
-   |---|---|
-   | `NEXT_PUBLIC_SUPABASE_URL` | `https://<your-project>.supabase.co` |
-   | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Your Supabase anon key |
-   | `NEXT_PUBLIC_SITE_URL` | `https://your-app.vercel.app` |
+   | Variable                       | Value                                    |
+   | ------------------------------ | ---------------------------------------- |
+   | `NEXT_PUBLIC_SUPABASE_URL`     | `https://<your-project>.supabase.co`     |
+   | `NEXT_PUBLIC_SUPABASE_ANON_KEY`| Your Supabase anon key                   |
+   | `NEXT_PUBLIC_SITE_URL`         | `https://your-app.vercel.app`            |
 
 4. Deploy — Vercel auto-detects Next.js and configures the build
 
@@ -275,149 +366,6 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 - [ ] Verify Google OAuth login works end-to-end in production
 - [ ] Test real-time sync across multiple browser tabs
 - [ ] Confirm HTTPS is active (automatic on Vercel)
-
----
-
-## Security
-
-| Layer | Mechanism |
-|---|---|
-| **Authentication** | Google OAuth 2.0 with PKCE (handled by Supabase Auth) |
-| **Session Validation** | `getUser()` on server-side (not `getSession()`) — revalidates token with Supabase Auth server |
-| **Route Protection** | Next.js Middleware intercepts every request and redirects unauthenticated users |
-| **Data Isolation** | PostgreSQL Row Level Security on all bookmark operations |
-| **Input Validation** | Client-side (immediate feedback) + Database constraints (VARCHAR limits) |
-| **XSS Prevention** | React auto-escapes rendered content |
-| **SQL Injection** | Parameterized queries via Supabase client SDK |
-| **Token Storage** | Secure cookies managed by `@supabase/ssr` |
-| **HTTPS** | Enforced automatically on Vercel |
-
----
-
-## Problems Encountered and Solutions
-
-### Problem 1: TypeScript Type Conflicts with Supabase Client
-
-**Context:** Passing a generic `Database` type to `createServerClient<Database>(...)` caused type mismatches with the Supabase SSR library.
-
-**Solution:** Removed the generic type parameter from client initialization. The Supabase client works correctly without explicit database typing for standard CRUD operations. Types are enforced at the application layer via the `Bookmark` interface.
-
----
-
-### Problem 2: Real-time Subscription Memory Leaks
-
-**Context:** Forgetting to clean up Supabase Realtime channels in React's `useEffect` caused WebSocket connections to accumulate when components unmounted and remounted.
-
-**Solution:** Implemented proper cleanup:
-```typescript
-useEffect(() => {
-  const channel = supabase.channel('bookmarks-channel').on(/* ... */).subscribe();
-  return () => {
-    supabase.removeChannel(channel); // ← cleanup on unmount
-  };
-}, [userId]);
-```
-
----
-
-### Problem 3: OAuth Redirect URL Mismatch
-
-**Context:** Google OAuth redirected to an incorrect callback URL, causing authentication failures in different environments (localhost vs. production).
-
-**Solution:** Used `window.location.origin` for dynamic redirect URL construction:
-```typescript
-redirectTo: `${window.location.origin}/api/auth/callback`
-```
-This ensures the correct callback URL is used in any environment without hardcoding.
-
----
-
-### Problem 4: Server-Side Auth with `getSession()` vs. `getUser()`
-
-**Context:** Using `getSession()` in middleware and server components only checks the JWT locally without verifying it with the Supabase Auth server, which could allow expired or revoked tokens to pass.
-
-**Solution:** Replaced all server-side auth checks with `getUser()`, which sends a request to the Supabase Auth server to revalidate the token. This is more secure and is the officially recommended approach.
-
----
-
-### Problem 5: Duplicate Bookmarks from Real-time + Optimistic Updates
-
-**Context:** When adding a bookmark, the real-time INSERT event could fire before or after the optimistic UI update, causing the same bookmark to appear twice.
-
-**Solution:** Added a deduplication check in the real-time handler:
-```typescript
-if (prev.some((b) => b.id === (payload.new as Bookmark).id)) return prev;
-```
-
----
-
-### Problem 6: Google Avatar Images Blocked by Next.js
-
-**Context:** User profile avatars from Google (`lh3.googleusercontent.com`) were blocked by Next.js Image Optimization because the domain wasn't allowlisted.
-
-**Solution:** Added the Google avatar domain to `next.config.ts`:
-```typescript
-images: {
-  remotePatterns: [{ protocol: 'https', hostname: 'lh3.googleusercontent.com' }],
-},
-```
-
----
-
-## Environment Variables Reference
-
-| Variable | Required | Description |
-|---|---|---|
-| `NEXT_PUBLIC_SUPABASE_URL` | ✅ | Your Supabase project URL |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | ✅ | Your Supabase anonymous (public) key |
-| `NEXT_PUBLIC_SITE_URL` | ✅ | Your application URL (`http://localhost:3000` for dev) |
-
----
-
-## Design System
-
-The app uses a custom premium dark theme built on top of Tailwind CSS:
-
-- **Color Palette:** Deep navy backgrounds (`#0a0b14`) with indigo/violet accent gradients
-- **Typography:** [Inter](https://fonts.google.com/specimen/Inter) via `next/font/google`
-- **Components:** Glassmorphism cards with `backdrop-filter: blur(20px)`
-- **Animations:** Fade-in, slide-in/out, floating gradient orbs, skeleton loading
-- **Responsiveness:** Mobile-first with breakpoints at 768px for grid layouts
-
----
-
-## Future Enhancements
-
-- 📋 **Bookmark editing** — Edit title and URL of existing bookmarks
-- 🔍 **Search functionality** — Full-text search across bookmarks
-- 🏷️ **Tags & categories** — Organize bookmarks with labels
-- 📁 **Bookmark folders** — Hierarchical folder structure
-- 📤 **Export/Import** — Export bookmarks as JSON, HTML, or CSV
-- 🧩 **Chrome extension** — Save bookmarks directly from the browser
-- 🔗 **Bookmark sharing** — Share collections with other users
-- 📊 **Analytics dashboard** — Track bookmark usage and trends
-
----
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feat/your-feature`
-3. Make your changes and test thoroughly
-4. Commit with a meaningful message: `git commit -m "feat: add bookmark search"`
-5. Push and open a Pull Request
-
-### Commit Convention
-
-```
-feat:     New feature
-fix:      Bug fix
-docs:     Documentation only
-style:    Formatting, no logic change
-refactor: Code restructuring
-test:     Adding tests
-chore:    Build process, dependencies
-```
 
 ---
 
