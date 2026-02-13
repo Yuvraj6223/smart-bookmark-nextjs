@@ -12,7 +12,7 @@
 
 ## Live Demo
 
-🔗 [https://smart-bookmark-app.vercel.app](https://smart-bookmark-app.vercel.app)
+🔗 [https://smartbookmarknextjs.vercel.app/](https://smartbookmarknextjs.vercel.app/)
 
 ---
 
