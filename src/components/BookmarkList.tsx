@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useToast } from '@/components/Toast';
 import BookmarkItem from './BookmarkItem';
@@ -14,33 +14,70 @@ interface BookmarkListProps {
 export default function BookmarkList({ initialBookmarks, userId }: BookmarkListProps) {
   const [bookmarks, setBookmarks] = useState<Bookmark[]>(initialBookmarks);
   const { showToast } = useToast();
+  // Generate a stable unique ID per component instance to avoid channel name
+  // collisions when multiple tabs are open simultaneously. Without this,
+  // Supabase silently drops duplicate channel subscriptions.
+  const channelIdRef = useRef<string>(
+    `bookmarks-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
+  );
 
   useEffect(() => {
     const supabase = createClient();
 
     const channel = supabase
-      .channel('bookmarks-channel')
+      .channel(channelIdRef.current)
       .on(
         'postgres_changes',
         {
-          event: '*',
+          event: 'INSERT',
           schema: 'public',
           table: 'bookmarks',
           filter: `user_id=eq.${userId}`,
         },
         (payload) => {
-          if (payload.eventType === 'INSERT') {
-            setBookmarks((prev) => {
-              // Avoid duplicates from optimistic updates
-              if (prev.some((b) => b.id === (payload.new as Bookmark).id)) return prev;
-              return [payload.new as Bookmark, ...prev];
-            });
-          } else if (payload.eventType === 'DELETE') {
-            setBookmarks((prev) => prev.filter((b) => b.id !== payload.old.id));
+          const newBookmark = payload.new as Bookmark;
+          setBookmarks((prev) => {
+            // Avoid duplicates from optimistic updates
+            if (prev.some((b) => b.id === newBookmark.id)) return prev;
+            return [newBookmark, ...prev];
+          });
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'DELETE',
+          schema: 'public',
+          table: 'bookmarks',
+          filter: `user_id=eq.${userId}`,
+        },
+        (payload) => {
+          const deletedId = payload.old?.id;
+          if (deletedId) {
+            setBookmarks((prev) => prev.filter((b) => b.id !== deletedId));
           }
         }
       )
-      .subscribe();
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'bookmarks',
+          filter: `user_id=eq.${userId}`,
+        },
+        (payload) => {
+          const updated = payload.new as Bookmark;
+          setBookmarks((prev) =>
+            prev.map((b) => (b.id === updated.id ? updated : b))
+          );
+        }
+      )
+      .subscribe((status, err) => {
+        if (status === 'CHANNEL_ERROR') {
+          console.error('Realtime channel error:', err);
+        }
+      });
 
     return () => {
       supabase.removeChannel(channel);

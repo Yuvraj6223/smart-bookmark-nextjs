@@ -40,5 +40,9 @@ CREATE POLICY "Users can update own bookmarks"
   USING (auth.uid() = user_id)
   WITH CHECK (auth.uid() = user_id);
 
+-- Set REPLICA IDENTITY to FULL so DELETE events include full row data
+-- This is required for real-time delete sync across browser tabs
+ALTER TABLE bookmarks REPLICA IDENTITY FULL;
+
 -- Enable Realtime on bookmarks table
 ALTER PUBLICATION supabase_realtime ADD TABLE bookmarks;
