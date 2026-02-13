@@ -8,6 +8,7 @@ import Image from 'next/image';
 export default function Header() {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [menuOpen, setMenuOpen] = useState(false);
   const router = useRouter();
   const supabase = createClient();
 
@@ -34,9 +35,21 @@ export default function Header() {
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
+    setMenuOpen(false);
     router.push('/login');
     router.refresh();
   };
+
+  // Close mobile menu on resize to desktop
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth >= 480) {
+        setMenuOpen(false);
+      }
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   return (
     <header
@@ -110,52 +123,67 @@ export default function Header() {
         {loading ? (
           <div className="skeleton" style={{ width: 120, height: 32 }} />
         ) : user ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              {user.user_metadata?.avatar_url ? (
-                <Image
-                  src={user.user_metadata.avatar_url}
-                  alt="Avatar"
-                  width={30}
-                  height={30}
-                  style={{ borderRadius: '50%' }}
-                  unoptimized
-                />
+          <>
+            {/* Mobile menu button */}
+            <button
+              className="mobile-menu-btn"
+              onClick={() => setMenuOpen((prev) => !prev)}
+              aria-label="Toggle menu"
+              aria-expanded={menuOpen}
+            >
+              {menuOpen ? (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
               ) : (
-                <div
-                  style={{
-                    width: 30,
-                    height: 30,
-                    borderRadius: '50%',
-                    background: 'var(--accent-gradient)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: '0.8125rem',
-                    fontWeight: 600,
-                    color: '#fff',
-                  }}
-                >
-                  {user.email?.charAt(0).toUpperCase()}
-                </div>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="3" y1="12" x2="21" y2="12" />
+                  <line x1="3" y1="6" x2="21" y2="6" />
+                  <line x1="3" y1="18" x2="21" y2="18" />
+                </svg>
               )}
-              <span
-                style={{
-                  fontSize: '0.8125rem',
-                  color: 'var(--text-secondary)',
-                  maxWidth: 160,
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                {user.email}
-              </span>
-            </div>
-            <button onClick={handleLogout} className="btn-ghost">
-              Sign out
             </button>
-          </div>
+
+            {/* Nav right — desktop inline, mobile dropdown */}
+            <div className={`header-nav-right ${menuOpen ? 'open' : ''}`}>
+              <div className="header-user-info">
+                {user.user_metadata?.avatar_url ? (
+                  <Image
+                    src={user.user_metadata.avatar_url}
+                    alt="Avatar"
+                    width={30}
+                    height={30}
+                    style={{ borderRadius: '50%' }}
+                    unoptimized
+                  />
+                ) : (
+                  <div
+                    style={{
+                      width: 30,
+                      height: 30,
+                      borderRadius: '50%',
+                      background: 'var(--accent-gradient)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: '0.8125rem',
+                      fontWeight: 600,
+                      color: '#fff',
+                    }}
+                  >
+                    {user.email?.charAt(0).toUpperCase()}
+                  </div>
+                )}
+                <span className="header-user-email">
+                  {user.email}
+                </span>
+              </div>
+              <button onClick={handleLogout} className="btn-ghost">
+                Sign out
+              </button>
+            </div>
+          </>
         ) : (
           <a href="/login" className="btn-ghost">
             Sign in

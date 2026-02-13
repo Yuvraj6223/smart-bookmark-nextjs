@@ -4,16 +4,8 @@ import AuthButton from '@/components/AuthButton';
 
 export default function LoginPage() {
   return (
-    <div
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        minHeight: 'calc(100vh - 128px)',
-        padding: '40px 16px',
-      }}
-    >
-      <div style={{ width: '100%', maxWidth: 420 }} className="animate-fade-in">
+    <div className="login-container">
+      <div className="login-card animate-fade-in">
         {/* Logo & Heading */}
         <div style={{ textAlign: 'center', marginBottom: 32 }}>
           <div
@@ -33,14 +25,7 @@ export default function LoginPage() {
             </svg>
           </div>
 
-          <h1
-            style={{
-              fontSize: '1.875rem',
-              fontWeight: 700,
-              color: 'var(--text-primary)',
-              marginBottom: 8,
-            }}
-          >
+          <h1 className="login-heading">
             Smart Bookmarks
           </h1>
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.9375rem', lineHeight: 1.6 }}>
@@ -69,13 +54,7 @@ export default function LoginPage() {
         </div>
 
         {/* Feature Cards */}
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(3, 1fr)',
-            gap: 12,
-          }}
-        >
+        <div className="login-features-grid">
           <div className="feature-card" style={{ textAlign: 'center', padding: 16 }}>
             <svg
               width="24"

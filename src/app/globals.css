@@ -329,3 +329,381 @@ body {
   border-color: var(--accent-primary);
   transform: translateY(-2px);
 }
+
+/* ═══════════════════════════════════════════════════════
+   RESPONSIVE DESIGN — Mobile-first Media Queries
+   ═══════════════════════════════════════════════════════ */
+
+/* ── Mobile Menu Toggle ─────────────────────────────── */
+.mobile-menu-btn {
+  display: none;
+  background: none;
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 6px;
+  transition: color 0.2s ease, border-color 0.2s ease;
+}
+.mobile-menu-btn:hover {
+  color: var(--text-primary);
+  border-color: var(--border-hover);
+}
+
+/* ── Header Navigation container ────────────────────── */
+.header-nav-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.header-user-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.header-user-email {
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Bookmark Grid for Dashboard ────────────────────── */
+.bookmark-grid {
+  display: grid;
+  gap: 24px;
+  grid-template-columns: 1fr;
+}
+
+/* ── Page Container ─────────────────────────────────── */
+.page-container {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 32px 16px;
+}
+
+.page-title {
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 6px;
+}
+
+.page-subtitle {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+/* ── Login Page ─────────────────────────────────────── */
+.login-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: calc(100vh - 128px);
+  padding: 40px 16px;
+}
+
+.login-card {
+  width: 100%;
+  max-width: 420px;
+}
+
+.login-heading {
+  font-size: 1.875rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+
+.login-features-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+/* ── Bookmark Item responsive ───────────────────────── */
+.bookmark-item {
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border-default);
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  transition: background 0.2s ease;
+}
+
+.bookmark-item-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.bookmark-item-actions {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ═══════════════════════════════════════════════════════
+   BREAKPOINT: Small phones (max-width: 479px)
+   ═══════════════════════════════════════════════════════ */
+@media (max-width: 479px) {
+  /* Header */
+  .mobile-menu-btn {
+    display: flex;
+  }
+
+  .header-nav-right {
+    position: fixed;
+    top: 64px;
+    left: 0;
+    right: 0;
+    background: rgba(10, 11, 20, 0.97);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-bottom: 1px solid var(--border-default);
+    flex-direction: column;
+    padding: 16px;
+    gap: 12px;
+    transform: translateY(-100%);
+    opacity: 0;
+    pointer-events: none;
+    transition: transform 0.3s ease, opacity 0.3s ease;
+    z-index: 49;
+  }
+  .header-nav-right.open {
+    transform: translateY(0);
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .header-user-info {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .header-user-email {
+    max-width: 200px;
+  }
+
+  .header-nav-right .btn-ghost {
+    width: 100%;
+    justify-content: center;
+  }
+
+  /* Toast */
+  .toast-container {
+    left: 12px;
+    right: 12px;
+    top: 12px;
+    max-width: none;
+  }
+
+  /* Login */
+  .login-container {
+    padding: 24px 12px;
+  }
+
+  .login-heading {
+    font-size: 1.5rem;
+  }
+
+  .login-features-grid {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .feature-card {
+    padding: 14px;
+    border-radius: 10px;
+  }
+
+  /* Glass card */
+  .glass-card {
+    border-radius: 12px;
+  }
+
+  /* Dashboard */
+  .page-container {
+    padding: 20px 12px;
+  }
+
+  .page-title {
+    font-size: 1.375rem;
+  }
+
+  .page-subtitle {
+    font-size: 0.8125rem;
+  }
+
+  .bookmark-grid {
+    gap: 16px;
+  }
+
+  /* Bookmark Item */
+  .bookmark-item {
+    padding: 12px 14px;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .bookmark-item-actions {
+    align-self: flex-end;
+  }
+
+  /* Buttons — bigger touch targets */
+  .btn-primary {
+    padding: 12px 20px;
+    font-size: 0.9375rem;
+  }
+
+  .btn-ghost {
+    padding: 10px 14px;
+  }
+
+  .btn-danger {
+    padding: 8px 14px;
+    font-size: 0.8125rem;
+  }
+
+  /* Inputs */
+  .input-dark {
+    padding: 12px 14px;
+    font-size: 1rem;
+  }
+
+  /* Gradient mesh — smaller on mobile */
+  .bg-gradient-mesh::before {
+    width: 280px;
+    height: 280px;
+  }
+  .bg-gradient-mesh::after {
+    width: 220px;
+    height: 220px;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════
+   BREAKPOINT: Large phones / small tablets (480–767px)
+   ═══════════════════════════════════════════════════════ */
+@media (min-width: 480px) and (max-width: 767px) {
+  .mobile-menu-btn {
+    display: none;
+  }
+
+  .header-user-email {
+    max-width: 140px;
+  }
+
+  /* Toast */
+  .toast-container {
+    max-width: 340px;
+  }
+
+  /* Login */
+  .login-heading {
+    font-size: 1.625rem;
+  }
+
+  .login-features-grid {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+  }
+
+  /* Dashboard */
+  .page-container {
+    padding: 24px 16px;
+  }
+
+  .page-title {
+    font-size: 1.5rem;
+  }
+
+  .bookmark-grid {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+
+  /* Inputs & buttons — slightly bigger touch targets */
+  .btn-primary {
+    padding: 11px 20px;
+  }
+
+  .input-dark {
+    padding: 11px 14px;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════
+   BREAKPOINT: Tablets (768–1023px)
+   ═══════════════════════════════════════════════════════ */
+@media (min-width: 768px) and (max-width: 1023px) {
+  .bookmark-grid {
+    grid-template-columns: 280px 1fr;
+  }
+
+  .page-container {
+    padding: 28px 20px;
+  }
+
+  .page-title {
+    font-size: 1.625rem;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════
+   BREAKPOINT: Desktop (1024px+)
+   ═══════════════════════════════════════════════════════ */
+@media (min-width: 1024px) {
+  .bookmark-grid {
+    grid-template-columns: 340px 1fr;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════
+   Reduced Motion — Accessibility
+   ═══════════════════════════════════════════════════════ */
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-in,
+  .animate-slide-in,
+  .animate-slide-out,
+  .skeleton {
+    animation: none !important;
+  }
+  .feature-card:hover,
+  .btn-primary:hover {
+    transform: none !important;
+  }
+  .bg-gradient-mesh::before,
+  .bg-gradient-mesh::after {
+    animation: none !important;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════
+   Touch Device Enhancements
+   ═══════════════════════════════════════════════════════ */
+@media (hover: none) and (pointer: coarse) {
+  .feature-card:hover {
+    transform: none;
+    border-color: var(--border-default);
+  }
+  .btn-primary:hover {
+    transform: none;
+    box-shadow: none;
+  }
+  .btn-primary:hover::before {
+    opacity: 0;
+  }
+
+  /* Ensure touch targets are at least 44px */
+  .btn-ghost,
+  .btn-danger,
+  .btn-primary {
+    min-height: 44px;
+  }
+}

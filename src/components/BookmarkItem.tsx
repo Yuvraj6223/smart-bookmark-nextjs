@@ -40,15 +40,8 @@ export default function BookmarkItem({ bookmark, onDelete, index }: BookmarkItem
 
   return (
     <div
-      className="animate-fade-in"
+      className="bookmark-item animate-fade-in"
       style={{
-        padding: '14px 18px',
-        borderBottom: '1px solid var(--border-default)',
-        display: 'flex',
-        alignItems: 'flex-start',
-        justifyContent: 'space-between',
-        gap: 12,
-        transition: 'background 0.2s ease',
         animationDelay: `${index * 50}ms`,
         animationFillMode: 'backwards',
       }}
@@ -56,7 +49,7 @@ export default function BookmarkItem({ bookmark, onDelete, index }: BookmarkItem
       onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
     >
       {/* Favicon + Content */}
-      <div style={{ flex: 1, minWidth: 0 }}>
+      <div className="bookmark-item-content">
         <a
           href={bookmark.url}
           target="_blank"
@@ -95,7 +88,7 @@ export default function BookmarkItem({ bookmark, onDelete, index }: BookmarkItem
       </div>
 
       {/* Delete controls */}
-      <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
+      <div className="bookmark-item-actions">
         {!showConfirm ? (
           <button
             onClick={() => setShowConfirm(true)}
